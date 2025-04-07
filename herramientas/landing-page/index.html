@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Landing Page con Carousel</title>
+  
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Font Awesome para íconos -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+  <style>
+    body {
+      background-color: #f8f9fa;
+    }
+    .carousel-item {
+      height: 80vh;
+      background-size: cover;
+      background-position: center;
+    }
+    .carousel-caption {
+      background: rgba(0, 0, 0, 0.5);
+      padding: 20px;
+      border-radius: 12px;
+    }
+    .carousel-caption a {
+      color: #fff;
+      text-decoration: none;
+      font-size: 1.1rem;
+    }
+    .carousel-caption a i {
+      margin-right: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container text-center my-5">
+    <h1 class="display-4">NovaWin-Manager</h1>
+    <p class="lead">¡Gestiona tus análisis de manera rápida y eficaz!</p>
+  </div>
+
+  <div id="carouselLanding" class="carousel slide" data-bs-ride="carousel">
+    <div class="carousel-inner">
+
+      <div class="carousel-item active" style="background-image: url('distintos poros.png');">
+        <div class="carousel-caption d-none d-md-block">
+          <h5>Creación de reporte</h5>
+          <p>Los datos de análisis de la muestra se guardan ordenados en una planilla de Excel</p>
+        </div>
+      </div>
+      
+      <div class="carousel-item" style="background-image: url('hkgraph.png');">
+        <div class="carousel-caption d-none d-md-block">
+          <h5>Visualización de los datos</h5>
+          <p>
+            La porosidad de la muestra se puede visualizar en un gráfico, además de los histogramas de distintas metodologías aplicadas por el software NovaWin a la curva de adsorción y la de desorción.
+          </p>
+        </div>
+      </div>
+
+      <div class="carousel-item" style="background-image: url('https://picsum.photos/id/1019/1200/600');">
+        <div class="carousel-caption d-none d-md-block">
+          <h5>Escríbeme en caso de dudas o sugerencias</h5>
+          <p>
+            <a href="https://www.instagram.com/haidraxx/" target="_blank">
+              <i class="fab fa-instagram"></i>Instagram
+            </a>
+          </p>
+          <p>
+            <a href="https://github.com/mila125" target="_blank">
+              <i class="fab fa-github"></i>GitHub
+            </a>
+          </p>
+        </div>
+      </div>
+
+    </div>
+
+    <button class="carousel-control-prev" type="button" data-bs-target="#carouselLanding" data-bs-slide="prev">
+      <span class="carousel-control-prev-icon"></span>
+    </button>
+    <button class="carousel-control-next" type="button" data-bs-target="#carouselLanding" data-bs-slide="next">
+      <span class="carousel-control-next-icon"></span>
+    </button>
+
+    <div class="carousel-indicators">
+      <button type="button" data-bs-target="#carouselLanding" data-bs-slide-to="0" class="active"></button>
+      <button type="button" data-bs-target="#carouselLanding" data-bs-slide-to="1"></button>
+      <button type="button" data-bs-target="#carouselLanding" data-bs-slide-to="2"></button>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
