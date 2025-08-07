@@ -1,10 +1,57 @@
 from pywinauto import Application
 import time
+from methods_to_df import  preparar_archivo_excel,df_main,exportar_reporte_HK,exportar_reporte_DFT,exportar_reporte_BJH_con_teclas,exportar_reporte_fractal_con_teclas,exportar_reporte_BET_con_teclas
 import os
-import traceback
 import pandas as pd
 import configparser
 import openpyxl
+from pywinauto import Application
+import traceback
+import subprocess
+from pywinauto.keyboard import send_keys
+from datetime import datetime
+from queue import Queue
+import queue
+def exportar_y_guardar(nombre_hoja, funcion_exportacion, path_novawin, path_qps, path_csv, archivo_planilla, resultado_dict):
+    queue = Queue()
+    app, main_window = manejar_novawin(path_qps,
+            archivo_planilla ,
+            path_novawin,
+            archivo_planilla)
+    hilo = threading.Thread(target=funcion_exportacion, args=(main_window, path_csv, app, queue))
+    hilo.start()
+    hilo.join()
+    ruta_csv = queue.get()
+    close_window_novawin()
+    if ruta_csv:
+        df = leer_csv_y_crear_dataframe(ruta_csv)
+        agregar_dataframe_a_nueva_hoja(archivo_planilla, nombre_hoja, df)
+        resultado_dict[nombre_hoja] = df
+    else:
+        raise ValueError(f"Exportación fallida para {nombre_hoja}")
+def guardar_informe_excel(rutas_csv_dict, ruta_base_exportacion, nombre_base="informe.xlsx"):
+    try:
+        # Nombre único para el informe
+        ruta_excel_final = generar_nombre_unico(ruta_base_exportacion, nombre_base)
+
+        with pd.ExcelWriter(ruta_excel_final, engine='openpyxl') as writer:
+            for nombre_hoja, ruta_csv in rutas_csv_dict.items():
+                if ruta_csv and os.path.exists(ruta_csv):
+                    try:
+                        df = pd.read_csv(ruta_csv)
+                        df.to_excel(writer, sheet_name=nombre_hoja[:31], index=False)
+                        print(f" Agregada hoja '{nombre_hoja}' desde: {ruta_csv}")
+                    except Exception as e:
+                        print(f" Error leyendo {ruta_csv}: {e}")
+                else:
+                    print(f" Archivo no encontrado o ruta nula: {ruta_csv}")
+
+        print(f"\n Informe final guardado como: {ruta_excel_final}")
+        return ruta_excel_final
+
+    except Exception as e:
+        print(f" Error al crear el informe Excel: {e}")
+        return None
 def agregar_dataframe_a_nueva_hoja(archivo_planilla, nombre_hoja, dataframe):
     """
     Agrega un DataFrame a una nueva hoja en un archivo Excel.
@@ -86,9 +133,6 @@ def agregar_dataframe_a_excel_sin_borrar(ruta_excel, nuevo_dataframe):
     except Exception as e:
         print(f"Error al agregar el DataFrame a Excel: {e}")
         raise
-import os
-from datetime import datetime
-
 def generar_nombre_unico(base_path, namext):
     # Normalizar las barras a formato Unix (/)
     base_path = base_path.replace("\\", "/")
@@ -113,41 +157,109 @@ def generar_nombre_unico(base_path, namext):
     # Normalizar las barras de regreso a formato Windows (\)
     return base_path.replace("/", "\\")
     
-def manejar_novawin(path_novawin, archivo_qps):
+def inicializar_novawin(path_novawin):
+    for backend in ["win32", "uia"]:
+        try:
+            print(f"Intentando iniciar NovaWin con backend='{backend}'...")
+            app = Application(backend=backend).start(path_novawin)
+            time.sleep(10)  # espera para que cargue
+
+            main_window = app.window(title_re=".*NovaWin.*")
+            main_window.wait("exists enabled visible ready", timeout=15)
+
+            # Intentar mover ventana fuera de pantalla en lugar de minimizarla
+            try:
+                # Cambiar tamaño y posición de la ventana (x=0, y=0, width=800, height=600)
+                main_window.move_window(x=0, y=0, width=800, height=600, repaint=True)
+                print("Ventana redimensionada y movida")
+   
+            except AttributeError:
+                print("Backend no soporta move_window")
+
+            # NO llamar a set_focus() si está minimizada (puede bloquear)
+            if main_window.is_minimized():
+                print("La ventana está minimizada, la dejaremos así para no bloquear")
+            else:
+                main_window.set_focus()
+
+            print(f"Ventana NovaWin lista con backend='{backend}'")
+            return app, main_window
+
+        except Exception as e:
+            print(f"Error con backend '{backend}': {e}")
+
+    raise RuntimeError("No se pudo iniciar NovaWin con ninguno de los backends disponibles.")
+def crear_excel_con_hojas(csv_dict, ruta_excel_final):#usar esta ahora
+    """
+    Crea un archivo Excel donde cada hoja corresponde al contenido de un CSV.
+
+    :param csv_dict: Diccionario con claves como nombre de hoja y valores como path del CSV
+    :param ruta_excel_final: Ruta donde guardar el archivo .xlsx final
+    """
+    with pd.ExcelWriter(ruta_excel_final, engine='openpyxl') as writer:
+        for hoja, path_csv in csv_dict.items():
+            try:
+                df = pd.read_csv(path_csv)
+                df.to_excel(writer, sheet_name=hoja, index=False)
+                print(f"✔ Hoja '{hoja}' agregada con éxito desde {path_csv}")
+            except Exception as e:
+                print(f"❌ Error al procesar {hoja} ({path_csv}): {e}")
+def manejar_novawin(path_qps, path_csv, path_novawin, archivo_planilla):
     try:
-        # Invertir las barras en la ruta del archivo
-        archivo_qps = archivo_qps.replace("/", "\\")  # Reemplazar barras normales por barras invertidas
-        
-        # O usar normpath para normalizar la ruta según el sistema operativo
-        archivo_qps = os.path.normpath(archivo_qps)
+        path_qps = os.path.normpath(path_qps)
+        path_csv = os.path.normpath(path_csv)
+        archivo_planilla = os.path.normpath(archivo_planilla)
 
-        # Inicializar NovaWin
+        # Iniciar NovaWin
+        print("Iniciando NovaWin...")
         app, main_window = inicializar_novawin(path_novawin)
+        time.sleep(2)
 
-        # Interactuar con NovaWin
-        seleccionar_menu(main_window, "File->Open")
-        dialog = app.window(class_name="#32770")
-        interactuar_con_cuadro_dialogo(dialog, archivo_qps)
+        # Abrir archivo .QPS desde el menú
+        print("Abriendo archivo .QPS con Alt+F, luego O...")
+        send_keys('%fo')  # Alt+F > Open
+        time.sleep(1.5)
 
-        return app, main_window
+        print(f"Ingresando ruta del archivo QPS: {path_qps}")
+        send_keys(path_qps)
+        time.sleep(0.5)
+        send_keys('%a')  # Alt + A (Aceptar)
+        print("Archivo .QPS enviado y abierto.")
+        time.sleep(2)
+        path_csv_hk=exportar_reporte_HK(main_window,archivo_planilla, app)
+        path_csv_dft=exportar_reporte_DFT(main_window,archivo_planilla, app)
+        path_csv_bjha=exportar_reporte_BJH_con_teclas( main_window,archivo_planilla, app,"a")
+        path_csv_bjhd=exportar_reporte_BJH_con_teclas( main_window,archivo_planilla, app,"d")
+        path_csv_n=exportar_reporte_fractal_con_teclas(main_window,archivo_planilla, app,'n')
+        path_csv_f=exportar_reporte_fractal_con_teclas(main_window,archivo_planilla, app,'f')
+        path_csv_k=exportar_reporte_fractal_con_teclas(main_window,archivo_planilla, app,'k')
+        path_csv_h=exportar_reporte_fractal_con_teclas(main_window,archivo_planilla, app,'h')
+        path_csv_bet=exportar_reporte_BET_con_teclas(main_window,archivo_planilla, app)
+        archivo_planilla = preparar_archivo_excel(path_qps, archivo_planilla)
+     
+        csv_hojas = {
+        "HK": path_csv_hk,
+        "DFT": path_csv_dft,
+        "BJHA": path_csv_bjha,
+        "BJHD": path_csv_bjhd,
+        "N": path_csv_n,
+        "F": path_csv_f,
+        "K": path_csv_k,
+        "H": path_csv_h,
+        "BET": path_csv_bet,
+         }
+
+        crear_excel_con_hojas(csv_hojas, "exportacion_completa.xlsx")
+
+        print("Proceso completado exitosamente.")
+        ejecutar_en_hebra(ejecutar_ide)
+
 
     except Exception as e:
         print(f"Error al manejar NovaWin: {e}")
-        traceback.print_exc()
-        raise
-
-def inicializar_novawin(path_novawin):
-    try:
-        app = Application(backend="uia").start(path_novawin)
-        time.sleep(5)  # Esperar que se cargue NovaWin
-        main_window = app.window(title_re=".*NovaWin.*")
-        return app, main_window
-    except Exception as e:
-        print(f"Error al inicializar NovaWin: {e}")
-        raise
-
 def seleccionar_menu(window, ruta_menu):
     try:
+        print(f"Seleccionando menú: {ruta_menu}")
         window.menu_select(ruta_menu)
         time.sleep(2)
     except Exception as e:
@@ -156,10 +268,14 @@ def seleccionar_menu(window, ruta_menu):
 
 def interactuar_con_cuadro_dialogo(dialog, archivo):
     try:
+        print(f"Interactuando con diálogo para abrir: {archivo}")
         edit_box = dialog.child_window(class_name="Edit")
         edit_box.set_edit_text(archivo)
+        
         open_button = dialog.child_window(class_name="Button", found_index=0)
         open_button.click_input()
+        
+        print("Archivo enviado al diálogo correctamente.")
     except Exception as e:
         print(f"Error al interactuar con el cuadro de diálogo: {e}")
         raise
@@ -168,26 +284,19 @@ def leer_csv_y_crear_dataframe(ruta_csv):
     if not os.path.exists(ruta_csv):
         print(f"Archivo CSV no encontrado: {ruta_csv}")
         raise FileNotFoundError(f"Archivo no encontrado: {ruta_csv}")
-
     try:
-        return pd.read_csv(ruta_csv)
+        df = pd.read_csv(ruta_csv)
+        print(f"CSV leído correctamente: {ruta_csv}")
+        return df
     except Exception as e:
         print(f"Error al leer CSV: {e}")
         raise
-def agregar_csv_a_plantilla_excel(ruta_csv, ruta_excel,df_csv):
-    """
-    Agrega el contenido de un CSV a una plantilla Excel (`Reporte.xlsx`).
-    Los datos se escriben en las columnas vacías sin borrar el contenido existente.
-    """
+
+def agregar_csv_a_plantilla_excel(ruta_csv, ruta_excel, df_csv):
     try:
-        # Invertir las barras en la ruta del archivo
-        ruta_excel = ruta_excel.replace("/", "\\")  # Reemplazar barras normales por barras invertidas
-        
-        # O usar normpath para normalizar la ruta según el sistema operativo
-        ruta_excel = os.path.normpath(ruta_excel)
-        ruta_excel = os.path.join(ruta_excel, "Report.xlsx")
-        print(ruta_excel)
-        # Crear archivo Excel si no existe o si el archivo no tiene formato válido
+        ruta_excel = os.path.normpath(os.path.join(ruta_excel, "Report.xlsx"))
+        print(f"Archivo Excel destino: {ruta_excel}")
+
         if not os.path.exists(ruta_excel) or not ruta_excel.endswith(('.xlsx', '.xlsm', '.xltx', '.xltm')):
             wb = openpyxl.Workbook()
             ws = wb.active
@@ -195,37 +304,27 @@ def agregar_csv_a_plantilla_excel(ruta_csv, ruta_excel,df_csv):
             wb.save(ruta_excel)
             print(f"Archivo Excel creado: {ruta_excel}")
 
-        # Abrir el archivo Excel
         wb = openpyxl.load_workbook(ruta_excel)
-        if "Reporte" not in wb.sheetnames:
-            ws = wb.create_sheet(title="Reporte")
-        else:
-            ws = wb["Reporte"]
+        ws = wb["Reporte"] if "Reporte" in wb.sheetnames else wb.create_sheet("Reporte")
 
-        # Obtener la fila y columna inicial para insertar los datos
         max_row = ws.max_row
         max_col = ws.max_column
-
-        # Determinar la columna vacía para comenzar a escribir
         start_col = max_col + 1 if max_row > 1 else 1
 
-        # Escribir encabezados si es la primera inserción
         if start_col == 1:
             for col, header in enumerate(df_csv.columns, start=start_col):
                 ws.cell(row=1, column=col).value = header
 
-        # Insertar datos en columnas vacías
         for i, row in enumerate(df_csv.itertuples(index=False), start=2):
             for j, value in enumerate(row, start=start_col):
                 ws.cell(row=i, column=j).value = value
 
-        # Guardar cambios en el archivo Excel
         wb.save(ruta_excel)
-        print(f"Datos del CSV agregados exitosamente a: {ruta_excel}")
-
+        print(f"Datos del CSV agregados a: {ruta_excel}")
     except Exception as e:
-        print(f"Error al agregar datos del CSV a la plantilla Excel: {e}")
+        print(f"Error al agregar datos a Excel: {e}")
         raise
+
 def guardar_dataframe_en_ini(df, archivo_ini):
     try:
         config = configparser.ConfigParser()
@@ -233,19 +332,22 @@ def guardar_dataframe_en_ini(df, archivo_ini):
             config[columna] = {f"fila_{i}": str(valor) for i, valor in enumerate(df[columna])}
         with open(archivo_ini, 'w') as archivo:
             config.write(archivo)
-        print(f"DataFrame guardado en {archivo_ini}")
+        print(f"DataFrame guardado en INI: {archivo_ini}")
     except Exception as e:
         print(f"Error al guardar INI: {e}")
         raise
+
 def close_window_novawin():
     try:
-        # Conectar a la ventana de NovaWin
         app = Application(backend='uia').connect(title_re='.*NovaWin.*')
         window = app.window(title_re='.*NovaWin.*')
-        # Cerrar la ventana
         window.close()
         print("La ventana de NovaWin ha sido cerrada.")
     except Exception as e:
         print(f"Error al cerrar la ventana de NovaWin: {e}")
+
 def ejecutar_ide():
-    subprocess.run(["python", "-m", "novarep_ide"])
+    try:
+        subprocess.run(["python", "-m", "novarep_ide"], check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error ejecutando IDE: {e}")
